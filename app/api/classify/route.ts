@@ -4,7 +4,7 @@ export async function POST(req: Request) {
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
-    const labels = formData.get("labels") as string | null;
+    const labels = formData.get("labels") as string | null; // labels envoyés par le client
 
     if (!file) {
       return NextResponse.json({ ok: false, error: "No file uploaded" }, { status: 400 });
