@@ -2,33 +2,43 @@ import { NextResponse } from "next/server";
 import * as tf from "@tensorflow/tfjs";
 import * as mobilenet from "@tensorflow-models/mobilenet";
 
+// Initialiser le modèle en mémoire (singleton)
+let model: mobilenet.MobileNet | null = null;
+async function loadModel() {
+  if (!model) {
+    model = await mobilenet.load();
+  }
+  return model;
+}
+
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File;
 
     if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    // Lire le buffer du fichier
+    // Lire le fichier en ArrayBuffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Charger l’image avec canvas
-    const { Image } = require("canvas");
-    const img = new Image();
-    img.src = buffer;
+    // Décoder l’image en tensor
+    const image = tf.node.decodeImage(buffer);
 
-    // Charger MobileNet
-    const model = await mobilenet.load();
+    // Charger le modèle
+    const model = await loadModel();
 
-    // Classifier l’image
-    const predictions = await model.classify(img);
+    // Prédire
+    const predictions = await model.classify(image);
 
     return NextResponse.json({ predictions });
-  } catch (err: any) {
-    console.error(err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (error: any) {
+    console.error("Classification error:", error);
+    return NextResponse.json(
+      { error: "Failed to classify image", details: error.message },
+      { status: 500 }
+    );
   }
 }
