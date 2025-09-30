@@ -2,64 +2,147 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <meta name="google" content="notranslate"/>
   <title>CustomsVision Pro — Démo</title>
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:24px;max-width:960px}
-    .box{display:flex;gap:16px;align-items:flex-start;margin-top:16px}
-    img{max-width:320px;border:1px solid #eee;border-radius:8px}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:24px;max-width:1000px}
+    h1{margin:0 0 8px}
+    .wrap{display:flex;gap:20px;flex-wrap:wrap}
+    .left{min-width:300px;max-width:360px}
+    img{max-width:100%;border:1px solid #eee;border-radius:8px}
+    button{padding:10px 14px;cursor:pointer}
+    ol{margin:8px 0 0 18px}
     pre{background:#f6f6f6;padding:12px;border-radius:8px;overflow:auto}
-    button{padding:10px 16px;cursor:pointer}
+    .card{border:1px solid #e8e8e8;border-radius:10px;padding:14px}
+    .muted{color:#666;font-size:12px}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   </style>
 </head>
 <body class="notranslate">
-  <h1>📦 CustomsVision Pro — Démo navigateur</h1>
-  <p>Charge une image puis clique « Analyser ». La reconnaissance tourne <b>dans le navigateur</b> (MobileNet).</p>
+  <h1>📦 CustomsVision Pro</h1>
+  <div class="muted">Démo 100% navigateur — pas de serveur nécessaire</div>
 
-  <input id="file" type="file" accept="image/*"/>
-  <div class="box" id="ui" style="display:none">
-    <img id="preview" alt="preview"/>
-    <div style="flex:1">
-      <button id="analyze">Analyser l’image</button>
-      <div id="results"></div>
+  <div class="row" style="margin:14px 0 10px">
+    <input id="file" type="file" accept="image/*"/>
+    <button id="analyze" disabled>Analyser l’image</button>
+    <button id="export" disabled>Exporter PDF</button>
+  </div>
+
+  <div class="wrap">
+    <div class="left card">
+      <img id="preview" alt="aperçu"/>
+      <div id="meta" class="muted" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card" style="flex:1;min-width:280px">
+      <h3 style="margin-top:0">Résultats</h3>
+      <div id="status" class="muted">Chargez une image, puis cliquez « Analyser l’image »</div>
+
+      <div id="predBox" style="display:none">
+        <h4>Prédictions (top-5)</h4>
+        <ol id="preds"></ol>
+      </div>
+
+      <div id="hsBox" style="display:none;margin-top:10px">
+        <h4>Codes HS proposés</h4>
+        <ol id="hs"></ol>
+        <div class="muted">⚠️ Indication automatique. Vérification tarifaire requise avant déclaration.</div>
+      </div>
     </div>
   </div>
 
+  <!-- TFJS + MobileNet (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0"></script>
+
   <script>
-    const input = document.getElementById('file');
-    const img = document.getElementById('preview');
-    const ui = document.getElementById('ui');
-    const btn = document.getElementById('analyze');
-    const out = document.getElementById('results');
-    let model=null;
+    // --- mini index HS : mots-clés ~> code HS (démo)
+    const HS_INDEX = [
+      { hs:"6404.11", title:"Chaussures de sport, dessus textile", keywords:["shoe","sneaker","running","trainer","footwear"] },
+      { hs:"6109.10", title:"T-shirts coton, tricotés", keywords:["tshirt","t-shirt","tee","jersey","cotton shirt"] },
+      { hs:"8517.12", title:"Téléphones cellulaires / smartphones", keywords:["phone","smartphone","cellphone","iphone","android"] },
+      { hs:"8471.30", title:"Ordinateurs portables", keywords:["laptop","notebook computer","macbook"] },
+      { hs:"8525.80", title:"Appareils photo / caméras", keywords:["camera","dslr","gopro"] },
+      { hs:"8712.00", title:"Bicyclettes", keywords:["bicycle","bike","bmx","mountain bike"] },
+      { hs:"4202.92", title:"Sacs, matière textile", keywords:["bag","backpack","handbag","suitcase","luggage"] },
+      { hs:"8507.60", title:"Batteries lithium-ion", keywords:["lithium","li-ion","battery","power bank"] }
+    ];
+
+    const $ = (id)=>document.getElementById(id);
+    const file=$("file"), img=$("preview"), analyze=$("analyze"), exportBtn=$("export");
+    const status=$("status"), predsEl=$("preds"), predBox=$("predBox");
+    const hsEl=$("hs"), hsBox=$("hsBox"), meta=$("meta");
+    let model=null, lastPreds=null, lastFileName=null;
 
     async function loadModel(){
       if(!model){ await tf.ready(); model = await mobilenet.load({version:2, alpha:1.0}); }
       return model;
     }
 
-    input.addEventListener('change', e=>{
+    file.addEventListener("change", e=>{
       const f = e.target.files?.[0];
-      if(!f) return;
+      if(!f){ analyze.disabled = true; exportBtn.disabled=true; return;}
       img.src = URL.createObjectURL(f);
-      ui.style.display='flex';
-      out.innerHTML='';
+      lastFileName = f.name;
+      meta.textContent = `${f.name} — ${(f.size/1024).toFixed(1)} Ko — ${f.type||"image"}`;
+      predsEl.innerHTML = ""; hsEl.innerHTML=""; predBox.style.display="none"; hsBox.style.display="none";
+      status.textContent = "Image chargée. Cliquez « Analyser l’image ».";
+      analyze.disabled = false; exportBtn.disabled=true;
     });
 
-    btn.addEventListener('click', async ()=>{
-      btn.disabled = true; btn.textContent = 'Analyse…';
+    analyze.addEventListener("click", async ()=>{
+      analyze.disabled = true; status.textContent = "Chargement du modèle…";
       await loadModel();
-      await new Promise(res=> img.complete ? res() : img.onload = ()=>res());
+      // attendre que l'image soit prête
+      await new Promise(res=> img.complete ? res() : (img.onload=()=>res()));
+      status.textContent = "Analyse en cours…";
       const preds = await model.classify(img, 5);
-      out.innerHTML =
-        '<h3>Prédictions</h3><ol>' +
-        preds.map(p=>`<li>${p.className} — ${(p.probability*100).toFixed(1)}%</li>`).join('') +
-        '</ol>';
-      btn.disabled = false; btn.textContent = 'Analyser l’image';
+      lastPreds = preds;
+      predBox.style.display="block";
+      predsEl.innerHTML = preds.map(p=>`<li>${p.className} — ${(p.probability*100).toFixed(1)}%</li>`).join("");
+
+      // mapping HS (très simple : présence de mots-clés dans les labels)
+      const labels = preds.map(p=>p.className.toLowerCase());
+      const hsScores = HS_INDEX.map(it=>{
+        const hit = it.keywords.some(k => labels.some(lbl => lbl.includes(k)));
+        return { ...it, score: hit ? 1 : 0 };
+      }).filter(x=>x.score>0).slice(0,3);
+
+      if(hsScores.length){
+        hsBox.style.display="block";
+        hsEl.innerHTML = hsScores.map(h=>`<li><b>${h.hs}</b> — ${h.title}</li>`).join("");
+      }else{
+        hsBox.style.display="block";
+        hsEl.innerHTML = `<li>Aucune proposition fiable à partir des libellés. (Image trop générique)</li>`;
+      }
+
+      status.textContent = "Analyse terminée.";
+      analyze.disabled = false; exportBtn.disabled=false;
     });
+
+    // Export PDF via impression navigateur
+    exportBtn.addEventListener("click", ()=>{
+      const w = window.open("","_blank");
+      const html = `
+        <html lang="fr"><head><meta charset="utf-8"><title>Rapport CustomsVision</title>
+        <style>body{font-family:system-ui;margin:24px} img{max-width:240px;border:1px solid #eee;border-radius:8px}
+        h2{margin:0 0 8px} ol{margin:6px 0 0 18px}</style></head>
+        <body>
+          <h2>Rapport CustomsVision</h2>
+          <div>Fichier: ${lastFileName||"-"}</div>
+          <img src="${img.src}" />
+          <h3>Prédictions</h3>
+          <ol>${(lastPreds||[]).map(p=>`<li>${p.className} — ${(p.probability*100).toFixed(1)}%</li>`).join("")}</ol>
+          <h3>Codes HS proposés</h3>
+          <ol>${hsEl.innerHTML||"<li>Aucune proposition</li>"}</ol>
+          <p style="color:#666;font-size:12px">⚠️ Résultat indicatif. Vérification tarifaire et règles d’origine/mesures O&D requises avant usage.</p>
+        </body></html>`;
+      w.document.write(html); w.document.close(); w.focus(); w.print();
+    });
+
+    // Astuce: éviter les erreurs causées par la traduction automatique
+    document.documentElement.classList.add("notranslate");
   </script>
 </body>
 </html>
