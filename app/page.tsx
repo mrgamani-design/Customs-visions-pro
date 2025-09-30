@@ -1,4 +1,5 @@
 "use client";
+
 import { useEffect, useRef, useState } from "react";
 type Pred = { className: string; probability: number };
 
@@ -11,6 +12,7 @@ export default function Home() {
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [model, setModel] = useState<any>(null);
 
+  // Charge Mobilenet côté client une seule fois
   useEffect(() => {
     (async () => {
       const tf = await import("@tensorflow/tfjs");
@@ -34,27 +36,29 @@ export default function Home() {
     return top;
   }
 
-  async function sendToServer(withLabels: Pred[] | null) {
-    if (!file) return;
-    const fd = new FormData();
-    fd.append("file", file);
-    if (withLabels) fd.append("labels", JSON.stringify(withLabels));
-    const res = await fetch("/api/classify", { method: "POST", body: fd });
-    const json = await res.json(); setServerResp(json);
-  }
-
   async function handleAnalyze() {
     if (!file) return;
     setLoading(true);
-    try { const top = await classifyClient(); await sendToServer(top); }
-    catch { setServerResp({ ok:false, error:"Erreur d'analyse" }); }
-    finally { setLoading(false); }
+    try {
+      const top = await classifyClient();               // 1) reco dans le navigateur
+      const fd = new FormData();                        // 2) envoie image + labels au serveur (optionnel)
+      fd.append("file", file);
+      if (top) fd.append("labels", JSON.stringify(top));
+      const res = await fetch("/api/classify", { method: "POST", body: fd });
+      const json = await res.json();
+      setServerResp(json);
+    } catch {
+      setServerResp({ ok:false, error:"Erreur d'analyse" });
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <main style={{ maxWidth: 900, margin: "40px auto", padding: "0 16px", fontFamily: "system-ui, -apple-system, Segoe UI, Roboto" }}>
-      <h1>📦 CustomsVision Pro — Démo</h1>
-      <p>Charge une image puis clique « Analyser ». Les prédictions s’affichent et sont envoyées au serveur.</p>
+      <h1>📦 CustomsVision Pro — Démo navigateur</h1>
+      <p>Charge une image puis clique « Analyser ». Mobilenet tourne <b>dans le navigateur</b>.</p>
+
       <input type="file" accept="image/*" onChange={onPick} />
 
       {preview && (
