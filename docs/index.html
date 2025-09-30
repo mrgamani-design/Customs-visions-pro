@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="google" content="notranslate"/>
+  <title>CustomsVision Pro — Démo</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:24px;max-width:960px}
+    .box{display:flex;gap:16px;align-items:flex-start;margin-top:16px}
+    img{max-width:320px;border:1px solid #eee;border-radius:8px}
+    pre{background:#f6f6f6;padding:12px;border-radius:8px;overflow:auto}
+    button{padding:10px 16px;cursor:pointer}
+  </style>
+</head>
+<body class="notranslate">
+  <h1>📦 CustomsVision Pro — Démo navigateur</h1>
+  <p>Charge une image puis clique « Analyser ». La reconnaissance tourne <b>dans le navigateur</b> (MobileNet).</p>
+
+  <input id="file" type="file" accept="image/*"/>
+  <div class="box" id="ui" style="display:none">
+    <img id="preview" alt="preview"/>
+    <div style="flex:1">
+      <button id="analyze">Analyser l’image</button>
+      <div id="results"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0"></script>
+  <script>
+    const input = document.getElementById('file');
+    const img = document.getElementById('preview');
+    const ui = document.getElementById('ui');
+    const btn = document.getElementById('analyze');
+    const out = document.getElementById('results');
+    let model=null;
+
+    async function loadModel(){
+      if(!model){ await tf.ready(); model = await mobilenet.load({version:2, alpha:1.0}); }
+      return model;
+    }
+
+    input.addEventListener('change', e=>{
+      const f = e.target.files?.[0];
+      if(!f) return;
+      img.src = URL.createObjectURL(f);
+      ui.style.display='flex';
+      out.innerHTML='';
+    });
+
+    btn.addEventListener('click', async ()=>{
+      btn.disabled = true; btn.textContent = 'Analyse…';
+      await loadModel();
+      await new Promise(res=> img.complete ? res() : img.onload = ()=>res());
+      const preds = await model.classify(img, 5);
+      out.innerHTML =
+        '<h3>Prédictions</h3><ol>' +
+        preds.map(p=>`<li>${p.className} — ${(p.probability*100).toFixed(1)}%</li>`).join('') +
+        '</ol>';
+      btn.disabled = false; btn.textContent = 'Analyser l’image';
+    });
+  </script>
+</body>
+</html>
